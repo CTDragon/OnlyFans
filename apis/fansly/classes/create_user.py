@@ -3,13 +3,15 @@ from itertools import chain
 from typing import Any, Optional, Union
 from urllib import parse
 
-import apis.onlyfans.classes.create_message as create_message
+from mergedeep.mergedeep import Strategy, merge
+
+import apis.fansly.classes.create_message as create_message
 from apis import api_helper
-from apis.onlyfans.classes import create_auth
-from apis.onlyfans.classes.create_highlight import create_highlight
-from apis.onlyfans.classes.create_post import create_post
-from apis.onlyfans.classes.create_story import create_story
-from apis.onlyfans.classes.extras import (
+from apis.fansly.classes import create_auth
+from apis.fansly.classes.create_highlight import create_highlight
+from apis.fansly.classes.create_post import create_post
+from apis.fansly.classes.create_story import create_story
+from apis.fansly.classes.extras import (
     content_types,
     endpoint_links,
     error_details,
@@ -62,10 +64,11 @@ class create_user:
         self.website: str = option.get("website")
         self.wishlist: str = option.get("wishlist")
         self.location: str = option.get("location")
+        timeline_status = option.get("timelineStats",{})
         self.postsCount: int = option.get("postsCount")
         self.archivedPostsCount: int = option.get("archivedPostsCount")
-        self.photosCount: int = option.get("photosCount")
-        self.videosCount: int = option.get("videosCount")
+        self.photosCount: int = timeline_status.get("imageCount")
+        self.videosCount: int = timeline_status.get("videoCount")
         self.audiosCount: int = option.get("audiosCount")
         self.mediasCount: int = option.get("mediasCount")
         self.promotions: list = option.get("promotions")
@@ -84,7 +87,7 @@ class create_user:
         self.isPrivateRestriction: bool = option.get("isPrivateRestriction")
         self.showSubscribersCount: bool = option.get("showSubscribersCount")
         self.showMediaCount: bool = option.get("showMediaCount")
-        self.subscribedByData: Any = option.get("subscribedByData")
+        self.subscribedByData: Any = option.get("subscription")
         self.subscribedOnData: Any = option.get("subscribedOnData")
         self.canPromotion: bool = option.get("canPromotion")
         self.canCreatePromotion: bool = option.get("canCreatePromotion")
@@ -229,9 +232,7 @@ class create_user:
             status = True
         return status
 
-    async def get_stories(
-        self, refresh=True, limit=100, offset=0
-    ) -> list[create_story]:
+    async def get_stories(self, refresh=True, limit=100, offset=0) -> list:
         api_type = "stories"
         if not refresh:
             result = handle_refresh(self, api_type)
@@ -253,7 +254,7 @@ class create_user:
 
     async def get_highlights(
         self, identifier="", refresh=True, limit=100, offset=0, hightlight_id=""
-    ) -> Union[list[create_highlight], list[create_story]]:
+    ) -> list:
         api_type = "highlights"
         if not refresh:
             result = handle_refresh(self, api_type)
@@ -277,7 +278,7 @@ class create_user:
         return results
 
     async def get_posts(
-        self, links: Optional[list[str]] = None, limit=10, offset=0, refresh=True
+        self, links: Optional[list] = None, limit:int=10, offset:int=0, refresh=True
     ) -> Optional[list[create_post]]:
         api_type = "posts"
         if not refresh:
@@ -286,22 +287,20 @@ class create_user:
                 return result
         if links is None:
             links = []
-        api_count = self.postsCount
-        if api_count and not links:
+        temp_results:list[Any] = []
+        while True:
             link = endpoint_links(
-                identifier=self.id, global_limit=limit, global_offset=offset
+                identifier=self.id, global_offset=offset
             ).post_api
-            ceil = math.ceil(api_count / limit)
-            numbers = list(range(ceil))
-            for num in numbers:
-                num = num * limit
-                link = link.replace(f"limit={limit}", f"limit={limit}")
-                new_link = link.replace("offset=0", f"offset={num}")
-                links.append(new_link)
-        results = await api_helper.scrape_endpoint_links(
-            links, self.session_manager, api_type
-        )
-        final_results = self.finalize_content_set(results)
+            response = await self.session_manager.json_request(link)
+            data = response["response"]
+            temp_posts = data["posts"]
+            if not temp_posts:
+                break
+            offset = temp_posts[-1]["id"]
+            temp_results.append(data)
+        results:dict[Any,Any] = merge({}, *temp_results, strategy=Strategy.ADDITIVE)
+        final_results = [create_post(x, self,results) for x in results["posts"]]
         self.temp_scraped.Posts = final_results
         return final_results
 
@@ -326,7 +325,7 @@ class create_user:
         offset=0,
         refresh=True,
         inside_loop=False,
-    ) -> Optional[list]:
+    ) -> list:
         api_type = "messages"
         if not self.subscriber or self.is_me():
             return []
@@ -427,8 +426,7 @@ class create_user:
         results = await api_helper.scrape_endpoint_links(
             links, self.session_manager, api_type
         )
-        final_results = self.finalize_content_set(results)
-
+        final_results = [create_post(x, self) for x in results if x]
         self.temp_scraped.Archived.Posts = final_results
         return final_results
 
@@ -517,14 +515,3 @@ class create_user:
 
     def set_scraped(self, name, scraped):
         setattr(self.scraped, name, scraped)
-    def finalize_content_set(self,results:list[dict[str,str]]):
-        final_results:list[create_post] = []
-        for result in results:
-            content_type = result["responseType"]
-            match content_type:
-                case "post":
-                    created = create_post(result,self)
-                    final_results.append(created)
-                case _:
-                    print
-        return final_results

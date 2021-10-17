@@ -13,7 +13,7 @@ import time
 # commit_id = response_json["commit"]["sha"]
 # downloaded = requests.get(f"https://github.com/DIGITALCRIMINAL/OnlyFans/archive/{commit_id}.zip")
 downloaded = requests.get(
-    f"https://github.com/DIGITALCRIMINAL/OnlyFans/archive/refs/heads/master.zip"
+    f"https://github.com/DIGITALCRIMINALS/OnlyFans/archive/refs/heads/master.zip"
 )
 content = io.BytesIO(downloaded.content)
 # Zip download for manual extraction
