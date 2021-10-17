@@ -19,6 +19,17 @@ Build and run the image, mounting the appropriate directories:
 
 ## Running the app locally
 
+### Windows Prerequisites
+
+Install C++ 14 build tools from https://visualstudio.microsoft.com/visual-cpp-build-tools/
+
+Download the appropriate version of lxml from https://www.lfd.uci.edu/~gohlke/pythonlibs/#lxml
+- Currently: lxml‑4.6.3‑cp310‑cp310‑win_amd64.whl
+
+`pip install --upgrade --user %USERPROFILE%\Downloads\lxml-4.6.3-cp310-cp310-win_amd64.whl`
+
+### Install Requirements and Run
+
 From the project folder open CMD/Terminal and run the command below:
 
 `pip install --upgrade --user -r requirements.txt`
