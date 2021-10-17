@@ -14,14 +14,14 @@ import extras.OFLogin.start_ofl as oflogin
 import extras.OFRenamer.start_ofr as ofrenamer
 import helpers.db_helper as db_helper
 import helpers.main_helper as main_helper
-from apis.onlyfans import onlyfans as OnlyFans
-from apis.onlyfans.classes.create_auth import create_auth
-from apis.onlyfans.classes.create_message import create_message
-from apis.onlyfans.classes.create_post import create_post
-from apis.onlyfans.classes.create_story import create_story
-from apis.onlyfans.classes.create_user import create_user
-from apis.onlyfans.classes.extras import auth_details, media_types
-from apis.onlyfans.onlyfans import start
+from apis.fansly import fansly as Fansly
+from apis.fansly.classes.create_auth import create_auth
+from apis.fansly.classes.create_message import create_message
+from apis.fansly.classes.create_post import create_post
+from apis.fansly.classes.create_story import create_story
+from apis.fansly.classes.create_user import create_user
+from apis.fansly.classes.extras import auth_details, media_types
+from apis.fansly.fansly import start
 from classes.prepare_metadata import create_metadata, prepare_reformat
 from helpers import db_helper
 from mergedeep import Strategy, merge
@@ -29,11 +29,10 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.scoping import scoped_session
 from tqdm.asyncio import tqdm
 
-site_name = "OnlyFans"
+site_name = "Fansly"
 json_config = None
 json_global_settings = {}
 json_settings = {}
-csv_export_only = False
 auto_media_choice = ""
 profile_directory = ""
 download_directory = ""
@@ -52,13 +51,12 @@ text_length = None
 
 
 def assign_vars(json_auth: auth_details, config, site_settings, site_name):
-    global csv_export_only, json_config, json_global_settings, json_settings, auto_media_choice, profile_directory, download_directory, metadata_directory, metadata_directory_format, delete_legacy_metadata, overwrite_files, date_format, file_directory_format, filename_format, ignored_keywords, ignore_type, blacklists, webhook, text_length
+    global json_config, json_global_settings, json_settings, auto_media_choice, profile_directory, download_directory, metadata_directory, metadata_directory_format, delete_legacy_metadata, overwrite_files, date_format, file_directory_format, filename_format, ignored_keywords, ignore_type, blacklists, webhook, text_length
 
     json_config = config
     json_global_settings = json_config["settings"]
     json_settings = site_settings
     auto_media_choice = json_settings["auto_media_choice"]
-    csv_export_only = json_settings["csv_export_only"]
     profile_directory = main_helper.get_directory(
         json_global_settings["profile_directories"], ".profiles"
     )
@@ -175,13 +173,13 @@ def scrape_choice(authed: create_auth, subscription):
         message,
     ]
     choice_list = main_helper.choose_option(media_types, auto_media_choice)
-    user_api = OnlyFans.endpoint_links(user_id).users
-    message_api = OnlyFans.endpoint_links(user_id).message_api
-    # mass_messages_api = OnlyFans.endpoint_links().mass_messages_api
-    stories_api = OnlyFans.endpoint_links(user_id).stories_api
-    list_highlights = OnlyFans.endpoint_links(user_id).list_highlights
-    post_api = OnlyFans.endpoint_links(user_id).post_api
-    archived_api = OnlyFans.endpoint_links(user_id).archived_posts
+    user_api = Fansly.endpoint_links(user_id).users
+    message_api = Fansly.endpoint_links(user_id).message_api
+    # mass_messages_api = Fansly.endpoint_links().mass_messages_api
+    stories_api = Fansly.endpoint_links(user_id).stories_api
+    list_highlights = Fansly.endpoint_links(user_id).list_highlights
+    post_api = Fansly.endpoint_links(user_id).post_api
+    archived_api = Fansly.endpoint_links(user_id).archived_posts
     # ARGUMENTS
     only_links = False
     mandatory = [download_directory, only_links]
@@ -285,11 +283,13 @@ async def profile_scraper(
         for override_media_type in override_media_types:
             new_dict = dict()
             media_type = override_media_type[0]
-            media_link = override_media_type[1]
-            new_dict["links"] = [media_link]
+            media_options = override_media_type[1]
+            new_dict["links"] = [media_options]
             directory2 = os.path.join(b, media_type)
             os.makedirs(directory2, exist_ok=True)
-            download_path = os.path.join(directory2, media_link.split("/")[-2] + ".jpg")
+            filename: str = media_options["filename"].replace("..", ".")
+            download_path = os.path.join(directory2, filename)
+            media_link: str = media_options["locations"][0]["location"]
             response = await authed.session_manager.json_request(
                 media_link, method="HEAD"
             )
@@ -352,7 +352,7 @@ async def paid_content_scraper(api: start, identifiers=[]):
             print(string)
             subscription.session_manager = authed.session_manager
             username = subscription.username
-            site_name = "OnlyFans"
+            site_name = "Fansly"
             media_type = format_media_types()
             count += 1
             for api_type, paid_contents in subscription.temp_scraped:
@@ -427,13 +427,13 @@ async def paid_content_scraper(api: start, identifiers=[]):
 
 def format_media_types():
     media_types = ["Images", "Videos", "Audios", "Texts"]
-    media_types2 = ["photo", "video", "stream", "gif", "audio", "text"]
+    media_types2 = ["photo", "image", "video", "stream", "gif", "audio", "text"]
     new_list = []
     for z in media_types:
         if z == "Images":
-            new_list.append([z, [media_types2[0]]])
+            new_list.append([z, media_types2[:2]])
         if z == "Videos":
-            new_list.append([z, media_types2[1:4]])
+            new_list.append([z, media_types2[2:4]])
         if z == "Audios":
             new_list.append([z, [media_types2[4]]])
         if z == "Texts":
@@ -689,13 +689,6 @@ async def process_metadata(
             if os.path.exists(old_metadata):
                 os.remove(old_metadata)
 
-async def get_csv_path(subscription: create_user):
-    mandatory_directories = {}
-    mandatory_directories["metadata_directory"] = metadata_directory
-    media_type = format_media_types()
-    formatted_directories = await format_directories(mandatory_directories, subscription, site_name, subscription.username, metadata_directory_format, [], [])
-    formatted_metadata_directory = formatted_directories["metadata_directory"]
-    return os.path.join(formatted_metadata_directory, 'all_media_links.csv')
 
 async def format_directories(
     directories: dict[str, Any],
@@ -797,12 +790,9 @@ async def prepare_scraper(authed: create_auth, site_name, item):
         master_set.extend(valid_highlights)
         print
     if api_type == "Posts":
-        try:
-            master_set = await subscription.get_posts()
-            master_set += await subscription.get_archived_posts()
-        except:
-            input("Failed to get user's posts. Press any key to continue.")
+        master_set = await subscription.get_posts()
         print(f"Type: Archived Posts")
+        master_set += await subscription.get_archived_posts()
     # if api_type == "Archived":
     #     master_set = await subscription.get_archived(authed)
     if api_type == "Messages":
@@ -820,7 +810,7 @@ async def prepare_scraper(authed: create_auth, site_name, item):
     unrefined_set = []
     if master_set2:
         print(f"Processing Scraped {api_type}")
-        tasks:list[Any] = pool.starmap(
+        tasks = pool.starmap(
             media_scraper,
             product(
                 master_set2,
@@ -1077,6 +1067,10 @@ async def media_scraper(
         if date == "-001-11-30T00:00:00+00:00":
             date_string = master_date
             date_object = datetime.strptime(master_date, "%d-%m-%Y %H:%M:%S")
+        elif isinstance(date, int):
+            timestamp = float(date)
+            date_object = datetime.fromtimestamp(timestamp)
+            date_string = date_object.replace(tzinfo=None).strftime("%d-%m-%Y %H:%M:%S")
         else:
             if not date:
                 date = master_date
@@ -1102,10 +1096,13 @@ async def media_scraper(
             else:
                 print
         new_post["price"] = price
-        for media in post_result.media:
+        for temp_media in post_result.media:
+            media = temp_media["media"]
             media_id = media["id"]
             preview_link = ""
-            link = await post_result.link_picker(media, json_settings["video_quality"])
+            link: str = await post_result.link_picker(
+                media, json_settings["video_quality"]
+            )
             matches = ["us", "uk", "ca", "ca2", "de"]
 
             if not link:
@@ -1114,16 +1111,6 @@ async def media_scraper(
             if not url.hostname:
                 continue
             subdomain = url.hostname.split(".")[0]
-            preview_link = media["preview"]
-            if any(subdomain in nm for nm in matches):
-                subdomain = url.hostname.split(".")[1]
-                if "upload" in subdomain:
-                    continue
-                if "convert" in subdomain:
-                    link = preview_link
-            rules = [link == "", preview_link == ""]
-            if all(rules):
-                continue
             new_media = dict()
             new_media["media_id"] = media_id
             new_media["links"] = []
@@ -1136,14 +1123,12 @@ async def media_scraper(
                     "%d-%m-%Y %H:%M:%S"
                 )
                 new_media["created_at"] = date_string
-            if int(media_id) in new_post["preview_media_ids"]:
-                new_media["preview"] = True
             for xlink in link, preview_link:
                 if xlink:
                     new_media["links"].append(xlink)
                     break
-
-            if media["type"] not in alt_media_type:
+            mime_type: str = media["mimetype"].split("/")[0]
+            if mime_type not in alt_media_type:
                 continue
             matches = [s for s in ignored_keywords if s in final_text]
             if matches:
@@ -1157,7 +1142,7 @@ async def media_scraper(
             )
             option = {}
             option = option | new_post
-            option["site_name"] = "OnlyFans"
+            option["site_name"] = "Fansly"
             option["media_id"] = media_id
             option["filename"] = filename
             option["api_type"] = final_api_type
@@ -1224,22 +1209,12 @@ async def media_scraper(
 
 # Downloads scraped content
 
-async def export_csv(media_resulsts, csv_path):
-    print(csv_path)
-    with open(csv_path, 'a') as csv_out:
-        for media in media_resulsts:
-            links = [media.link]
-            for link in links:
-                csv_out.write(f'{link}\n')
 
 async def prepare_downloads(subscription: create_user):
     download_info = subscription.download_info
     if not download_info:
         return
     directory = download_info["directory"]
-    csv_path = await get_csv_path(subscription)
-    if os.path.exists(csv_path):
-        os.remove(csv_path)
     for api_type, metadata_path in download_info["metadata_locations"].items():
         Session, engine = db_helper.create_database_session(metadata_path)
         database_session: scoped_session = Session()
@@ -1251,12 +1226,7 @@ async def prepare_downloads(subscription: create_user):
                 "onlyfans"
             ]["settings"]
             overwrite_files = settings["overwrite_files"]
-            media_set_count = 0
-            if csv_export_only:
-                result = database_session.query(media_table).all()
-                print(f"\nExporting CSV for {subscription.username} {api_type}")
-                await export_csv(result, csv_path)
-            elif overwrite_files:
+            if overwrite_files:
                 download_list: Any = (
                     database_session.query(media_table)
                     .filter(media_table.api_type == api_type)
@@ -1286,6 +1256,7 @@ async def prepare_downloads(subscription: create_user):
         print
     print
 
+
 async def manage_subscriptions(
     authed: create_auth, auth_count=0, identifiers: list = [], refresh: bool = True
 ):
@@ -1309,7 +1280,8 @@ async def manage_subscriptions(
                                 if identifier in bl_ids:
                                     print(f"Blacklisted: {identifier}")
                                     results.remove(result)
-    results.sort(key=lambda x: x.subscribedByData["expiredAt"])
+    results = [x for x in results if x.subscribedByData]
+    results.sort(key=lambda x: x.subscribedByData["endsAt"])
     results.sort(key=lambda x: x.is_me(), reverse=True)
     results2 = []
     hard_blacklist = ["onlyfanscreators"]

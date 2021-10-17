@@ -82,7 +82,7 @@ def rename_duplicates(seen, filename):
 
 
 def parse_links(site_name, input_link):
-    if site_name in {"onlyfans", "starsavn"}:
+    if site_name in {"onlyfans", "fansly","starsavn"}:
         username = input_link.rsplit("/", 1)[-1]
         return username
 
@@ -146,9 +146,10 @@ async def async_downloads(
             session_m.proxies[random.randint(0, len(proxies) - 1)] if proxies else ""
         )
         connector = ProxyConnector.from_url(proxy) if proxy else None
+        final_cookies:dict[Any,Any] = session_m.auth.auth_details.cookie.format() if session_m.use_cookies else {}
         async with ClientSession(
             connector=connector,
-            cookies=session_m.auth.auth_details.cookie.format(),
+            cookies=final_cookies,
             read_timeout=None,
         ) as session:
             tasks = []
@@ -828,7 +829,7 @@ def choose_auth(array):
     names = []
     array = [{"auth_count": -1, "username": "All"}] + array
     string = ""
-    seperator = " | "
+    separator = " | "
     name_count = len(array)
     if name_count > 1:
 
@@ -838,7 +839,7 @@ def choose_auth(array):
             string += str(count) + " = " + name
             names.append(x)
             if count + 1 != name_count:
-                string += seperator
+                string += separator
 
             count += 1
 
@@ -856,9 +857,9 @@ def choose_option(
 ):
     names = subscription_list[0]
     default_message = ""
-    seperator = " | "
+    separator = " | "
     if use_default_message:
-        default_message = f"Names: Username = username {seperator}"
+        default_message = f"Names: Username = username {separator}"
     new_names = []
     if names:
         if isinstance(auto_scrape, bool):
@@ -1158,11 +1159,11 @@ def multiprocessing():
 
 
 def module_chooser(domain, json_sites):
-    string = "Site: "
-    seperator = " | "
+    string = "Select Site: "
+    separator = " | "
     site_names = []
-    wl = ["onlyfans"]
-    bl = ["patreon"]
+    wl = ["onlyfans","fansly"]
+    bl = []
     site_count = len(json_sites)
     count = 0
     for x in json_sites:
@@ -1174,7 +1175,7 @@ def module_chooser(domain, json_sites):
         string += str(count) + " = " + x
         site_names.append(x)
         if count + 1 != site_count:
-            string += seperator
+            string += separator
 
         count += 1
     if domain and domain not in site_names:

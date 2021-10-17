@@ -1,8 +1,9 @@
-# OnlyFans DataScraper (Python 3.9.X)
+# OnlyFans DataScraper (Python 3.10.X)
 [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/DIGITALCRIMINAL/OnlyFans.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/DIGITALCRIMINAL/OnlyFans/context:python)
 # ![app-token](examples/64255399-96a86700-cf21-11e9-8c62-87a483f33701.png)
 
 # Mandatory Tutorial
+If you're looking to set up Fansly, here [X34's Tutorial](https://forum.sexy-egirls.com/threads/fansly-downloading-a-work-in-progress.132433/)
 
 Read the [#FAQ](README.md#faq) at the bottom of this page before submitting a issue.
 
@@ -14,9 +15,20 @@ Build and run the image, mounting the appropriate directories:
 
 ## Running on Linux
 
-https://github.com/DIGITALCRIMINAL/OnlyFans/discussions/889
+[Running in Linux](/Linux.md)
 
 ## Running the app locally
+
+### Windows Prerequisites
+
+Install C++ 14 build tools from https://visualstudio.microsoft.com/visual-cpp-build-tools/
+
+Download the appropriate version of lxml from https://www.lfd.uci.edu/~gohlke/pythonlibs/#lxml
+- Currently: lxml‑4.6.3‑cp310‑cp310‑win_amd64.whl
+
+`pip install --upgrade --user %USERPROFILE%\Downloads\lxml-4.6.3-cp310-cp310-win_amd64.whl`
+
+### Install Requirements and Run
 
 From the project folder open CMD/Terminal and run the command below:
 
@@ -343,7 +355,7 @@ Types: list|int|str|bool
 
 # FAQ
 
-Before troubleshooting, make sure you're using Python 3.9 and the latest commit of the script.
+Before troubleshooting, make sure you're using Python 3.10 and the latest commit of the script.
 
 Error: Access Denied / Auth Loop
 
@@ -370,12 +382,7 @@ I'm getting authed into the wrong account
 
 I'm using Linux OS and something isn't working.
 
-> Script was built on Windows 10. If you're using Linux you can still submit an issue and I'll try my best to fix it.
-
-Am I able to bypass paywalls with this script?
-
-> Hell yeah! My open source script can bypass paywalls for free.
-> [Tutorial](https://encrypted-tbn0.gstatic.com/images?q=tbn%3AANd9GcS5hTXe02DNlsktpFfkrr--OQ0ScILMibxmpQ&usqp=CAU)
+> Script is being built on a Arch Linux machine. It used to be Windows 10, but I switched my dev enviroment.
 
 Do OnlyFans or OnlyFans models know I'm using this script?
 

@@ -6,7 +6,7 @@ from typing import Any, Union
 class auth_details:
     def __init__(self, options: dict[str, Any] = {}) -> None:
         self.username = options.get("username", "")
-        self.cookie = cookie_parser(options.get("cookie", ""))
+        self.authorization = options.get("authorization", "")
         self.user_agent = options.get("user_agent", "")
         self.email = options.get("email", "")
         self.password = options.get("password", "")
@@ -15,15 +15,10 @@ class auth_details:
         self.active = options.get("active", True)
 
     def upgrade_legacy(self, options: dict[str, Any]):
-        if "cookie" not in options:
-            self = legacy_auth_details(options).upgrade(self)
         return self
 
     def export(self):
         new_dict = copy.copy(self.__dict__)
-        if isinstance(self.cookie, cookie_parser):
-            cookie = self.cookie.convert()
-            new_dict["cookie"] = cookie
         return new_dict
 
 
@@ -113,9 +108,10 @@ class endpoint_links(object):
         global_limit=10,
         global_offset=0,
     ):
-        self.customer = f"https://onlyfans.com/api2/v2/users/me"
+        self.customer = f"https://apiv2.fansly.com/api/v1/account?ids={identifier}"
+        self.settings = f"https://apiv2.fansly.com/api/v1/account/settings"
         self.users = f"https://onlyfans.com/api2/v2/users/{identifier}"
-        self.subscriptions = f"https://onlyfans.com/api2/v2/subscriptions/subscribes?limit={global_limit}&offset={global_offset}&type=active"
+        self.subscriptions = f"https://apiv2.fansly.com/api/v1/subscriptions"
         self.lists = f"https://onlyfans.com/api2/v2/lists?limit=100&offset=0"
         self.lists_users = f"https://onlyfans.com/api2/v2/lists/{identifier}/users?limit={global_limit}&offset={global_offset}&query="
         self.list_chats = f"https://onlyfans.com/api2/v2/chats?limit={global_limit}&offset={global_offset}&order=desc"
@@ -128,7 +124,7 @@ class endpoint_links(object):
         self.stories_api = f"https://onlyfans.com/api2/v2/users/{identifier}/stories?limit=100&offset=0&order=desc"
         self.list_highlights = f"https://onlyfans.com/api2/v2/users/{identifier}/stories/highlights?limit=100&offset=0&order=desc"
         self.highlight = f"https://onlyfans.com/api2/v2/stories/highlights/{identifier}"
-        self.post_api = f"https://onlyfans.com/api2/v2/users/{identifier}/posts?limit={global_limit}&offset={global_offset}&order=publish_date_desc&skip_users_dups=0"
+        self.post_api = f"https://apiv2.fansly.com/api/v1/timeline/{identifier}?before={global_offset}"
         self.archived_posts = f"https://onlyfans.com/api2/v2/users/{identifier}/posts/archived?limit={global_limit}&offset={global_offset}&order=publish_date_desc"
         self.archived_stories = f"https://onlyfans.com/api2/v2/stories/archive/?limit=100&offset=0&order=publish_date_desc"
         self.paid_api = f"https://onlyfans.com/api2/v2/posts/paid?{global_limit}&offset={global_offset}"
@@ -144,10 +140,12 @@ class endpoint_links(object):
 
 # Lol?
 class error_details:
-    def __init__(self, result) -> None:
-        error = result["error"] if "error" in result else result
+    def __init__(self, result:dict[Any,Any]) -> None:
+        error:dict[Any,Any] = result["error"] if "error" in result else result
         self.code = error["code"]
-        self.message = error["message"]
+        self.message = error.get("details","")
+        if not self.message:
+            self.message = error.get("message","")
 
 
 def create_headers(
