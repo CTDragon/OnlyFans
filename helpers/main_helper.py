@@ -11,7 +11,9 @@ import math
 import os
 import platform
 import random
+import subprocess
 import re
+import secrets
 import shutil
 import string
 import traceback
@@ -19,7 +21,7 @@ from datetime import datetime
 from itertools import zip_longest
 from multiprocessing.dummy import Pool as ThreadPool
 from types import SimpleNamespace
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union, BinaryIO
 
 import classes.make_settings as make_settings
 import classes.prepare_webhooks as prepare_webhooks
@@ -34,6 +36,8 @@ from aiohttp.client_exceptions import (
 )
 from aiohttp.client_reqrep import ClientResponse
 from apis.onlyfans import onlyfans as OnlyFans
+from apis.fansly import fansly as Fansly
+from apis.starsavn import starsavn as StarsAVN
 from apis.onlyfans.classes import create_user
 from apis.onlyfans.classes.create_auth import create_auth
 from apis.onlyfans.classes.extras import content_types
@@ -55,7 +59,7 @@ proxies = None
 cert = None
 
 
-def assign_vars(config):
+def assign_vars(config: dict[Any, Any]):
     global json_global_settings, min_drive_space, webhooks, max_threads, proxies, cert
 
     json_config = config
@@ -82,7 +86,7 @@ def rename_duplicates(seen, filename):
 
 
 def parse_links(site_name, input_link):
-    if site_name in {"onlyfans", "fansly","starsavn"}:
+    if site_name in {"onlyfans", "fansly", "starsavn"}:
         username = input_link.rsplit("/", 1)[-1]
         return username
 
@@ -98,7 +102,7 @@ def parse_links(site_name, input_link):
             return input_link
 
 
-def clean_text(string, remove_spaces=False):
+def clean_text(string: str, remove_spaces: bool = False):
     matches = ["\n", "<br>"]
     for m in matches:
         string = string.replace(m, " ").strip()
@@ -146,7 +150,9 @@ async def async_downloads(
             session_m.proxies[random.randint(0, len(proxies) - 1)] if proxies else ""
         )
         connector = ProxyConnector.from_url(proxy) if proxy else None
-        final_cookies:dict[Any,Any] = session_m.auth.auth_details.cookie.format() if session_m.use_cookies else {}
+        final_cookies: dict[Any, Any] = (
+            session_m.auth.auth_details.cookie.format() if session_m.use_cookies else {}
+        )
         async with ClientSession(
             connector=connector,
             cookies=final_cookies,
@@ -536,7 +542,7 @@ def legacy_sqlite_updater(
     return final_result, delete_metadatas
 
 
-def export_sqlite(database_path: str, api_type, datas):
+def export_sqlite(database_path: str, api_type, datas: list[dict[str, Any]]):
     metadata_directory = os.path.dirname(database_path)
     os.makedirs(metadata_directory, exist_ok=True)
     database_name = os.path.basename(database_path).replace(".db", "")
@@ -566,7 +572,7 @@ def export_sqlite(database_path: str, api_type, datas):
         if not post_db:
             post_db = api_table()
         if api_type == "Messages":
-            post_db.user_id = post["user_id"]
+            post_db.user_id = post.get("user_id", None)
         post_db.post_id = post_id
         post_db.text = post["text"]
         if post["price"] is None:
@@ -580,7 +586,7 @@ def export_sqlite(database_path: str, api_type, datas):
         for media in post["medias"]:
             if media["media_type"] == "Texts":
                 continue
-            created_at = media["created_at"]
+            created_at = media.get("created_at", postedAt)
             if not isinstance(created_at, datetime):
                 date_object = datetime.strptime(created_at, "%d-%m-%Y %H:%M:%S")
             else:
@@ -756,19 +762,19 @@ def find_model_directory(username, directories) -> Tuple[str, bool]:
 
 
 def are_long_paths_enabled():
-    if os_name == "Windows":
-        from ctypes import WinDLL, c_ubyte
+    if os_name != "Windows":
+        return True
 
-        ntdll = WinDLL("ntdll")
+    from ctypes import WinDLL, c_ubyte
 
-        if hasattr(ntdll, "RtlAreLongPathsEnabled"):
+    ntdll = WinDLL("ntdll")
 
-            ntdll.RtlAreLongPathsEnabled.restype = c_ubyte
-            ntdll.RtlAreLongPathsEnabled.argtypes = ()
-            return bool(ntdll.RtlAreLongPathsEnabled())
+    if not hasattr(ntdll, "RtlAreLongPathsEnabled"):
+        return False
 
-        else:
-            return False
+    ntdll.RtlAreLongPathsEnabled.restype = c_ubyte
+    ntdll.RtlAreLongPathsEnabled.argtypes = ()
+    return bool(ntdll.RtlAreLongPathsEnabled())
 
 
 def check_for_dupe_file(download_path, content_length):
@@ -782,7 +788,13 @@ def check_for_dupe_file(download_path, content_length):
 
 
 class download_session(tqdm):
-    def start(self, unit="B", unit_scale=True, miniters=1, tsize=0):
+    def start(
+        self,
+        unit: str = "B",
+        unit_scale: bool = True,
+        miniters: int = 1,
+        tsize: int = 0,
+    ):
         self.unit = unit
         self.unit_scale = unit_scale
         self.miniters = miniters
@@ -792,13 +804,21 @@ class download_session(tqdm):
             tsize = int(tsize)
             self.total += tsize
 
-    def update_total_size(self, tsize):
+    def update_total_size(self, tsize: Optional[int]):
         if tsize:
             tsize = int(tsize)
             self.total += tsize
 
-    def update_to(self, b=1, bsize=1, tsize=None):
-        self.update(b)
+
+def prompt_modified(message, path):
+    editor = shutil.which(
+        os.environ.get("EDITOR", "notepad" if os_name == "Windows" else "nano")
+    )
+    if editor:
+        print(message)
+        subprocess.run([editor, path], check=True)
+    else:
+        input(message)
 
 
 def get_config(config_path):
@@ -818,8 +838,9 @@ def get_config(config_path):
         filepath = os.path.join(".settings", "config.json")
         export_data(json_config, filepath)
     if not json_config:
-        input(
-            f"The .settings\\{file_name} file has been created. Fill in whatever you need to fill in and then press enter when done.\n"
+        prompt_modified(
+            f"The .settings\\{file_name} file has been created. Fill in whatever you need to fill in and then press enter when done.\n",
+            config_path,
         )
         json_config = ujson.load(open(config_path))
     return json_config, updated
@@ -891,8 +912,13 @@ def choose_option(
     return new_names
 
 
-def process_profiles(json_settings, proxies, site_name, api: Union[OnlyFans.start]):
-    profile_directories = json_settings["profile_directories"]
+def process_profiles(
+    json_settings: dict[str, Any],
+    proxies: list[str],
+    site_name: str,
+    api: OnlyFans.start | Fansly.start | StarsAVN.start,
+):
+    profile_directories: list[str] = json_settings["profile_directories"]
     for profile_directory in profile_directories:
         x = os.path.join(profile_directory, site_name)
         x = os.path.abspath(x)
@@ -983,25 +1009,48 @@ def is_me(user_api):
         return False
 
 
+def open_partial(path: str) -> BinaryIO:
+    prefix, extension = os.path.splitext(path)
+    while True:
+        partial_path = "{}-{}{}.part".format(prefix, secrets.token_hex(6), extension)
+        try:
+            return open(partial_path, "xb")
+        except FileExistsError:
+            os.unlink(partial_path)
+            pass
+
+
 async def write_data(response: ClientResponse, download_path: str, progress_bar):
     status_code = 0
     if response.status == 200:
         total_length = 0
         os.makedirs(os.path.dirname(download_path), exist_ok=True)
-        with open(download_path, "wb") as f:
-            try:
-                async for data in response.content.iter_chunked(4096):
-                    length = len(data)
-                    total_length += length
-                    progress_bar.update(length)
-                    f.write(data)
-            except (
-                ClientPayloadError,
-                ContentTypeError,
-                ClientOSError,
-                ServerDisconnectedError,
-            ) as e:
-                status_code = 1
+        partial_path: Optional[str] = None
+        try:
+            with open_partial(download_path) as f:
+                partial_path = f.name
+                try:
+                    async for data in response.content.iter_chunked(4096):
+                        length = len(data)
+                        total_length += length
+                        progress_bar.update(length)
+                        f.write(data)
+                except (
+                    ClientPayloadError,
+                    ContentTypeError,
+                    ClientOSError,
+                    ServerDisconnectedError,
+                ) as e:
+                    status_code = 1
+        except Exception:
+            if partial_path:
+                os.unlink(partial_path)
+            raise
+        else:
+            if status_code:
+                os.unlink(partial_path)
+            else:
+                os.replace(partial_path, download_path)
     else:
         if response.content_length:
             progress_bar.update_total_size(-response.content_length)
@@ -1162,7 +1211,7 @@ def module_chooser(domain, json_sites):
     string = "Select Site: "
     separator = " | "
     site_names = []
-    wl = ["onlyfans","fansly"]
+    wl = ["onlyfans", "fansly", "starsavn"]
     bl = []
     site_count = len(json_sites)
     count = 0

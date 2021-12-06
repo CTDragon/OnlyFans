@@ -1,4 +1,3 @@
-from apis import fansly
 import asyncio
 import copy
 import hashlib
@@ -34,6 +33,8 @@ import apis.onlyfans.classes as onlyfans_classes
 onlyfans_extras = onlyfans_classes.extras
 import apis.fansly.classes as fansly_classes
 fansly_extras = fansly_classes.extras
+import apis.starsavn.classes as starsavn_classes
+starsavn_extras = starsavn_classes.extras
 
 path = up(up(os.path.realpath(__file__)))
 os.chdir(path)
@@ -214,7 +215,7 @@ class session_manager:
             await session.close()
         return result
 
-    async def async_requests(self, items: list[str]) -> list:
+    async def async_requests(self, items: list[str]) -> list[dict[str,Any]]:
         tasks = []
 
         async def run(links: list[str]) -> list:
@@ -342,15 +343,15 @@ async def test_proxies(proxies: list[str]):
                 ip = ip.strip()
                 print("Session IP: " + ip + "\n")
                 final_proxies.append(proxy)
-            except python_socks._errors.ProxyConnectionError as e:
+            except python_socks._errors.ProxyConnectionError|python_socks._errors.ProxyError as e:
                 print(f"Proxy Not Set: {proxy}\n")
                 continue
     return final_proxies
 
 
-def restore_missing_data(master_set2, media_set, split_by):
+def restore_missing_data(master_set2:list[str], media_set, split_by):
     count = 0
-    new_set = []
+    new_set:set[str] = set()
     for item in media_set:
         if not item:
             link = master_set2[count]
@@ -359,15 +360,15 @@ def restore_missing_data(master_set2, media_set, split_by):
             if limit == split_by + 1:
                 break
             offset2 = offset
-            limit2 = int(limit / split_by)
+            limit2 = int(limit / split_by) if limit > 1 else 1
             for item in range(1, split_by + 1):
                 link2 = link.replace("limit=" + str(limit), "limit=" + str(limit2))
                 link2 = link2.replace("offset=" + str(offset), "offset=" + str(offset2))
                 offset2 += limit2
-                new_set.append(link2)
+                new_set.add(link2)
         count += 1
     new_set = new_set if new_set else master_set2
-    return new_set
+    return list(new_set)
 
 
 async def scrape_endpoint_links(links:list[str], session_manager: Union[session_manager,None], api_type:str):
@@ -379,7 +380,11 @@ async def scrape_endpoint_links(links:list[str], session_manager: Union[session_
             continue
         print("Scrape Attempt: " + str(attempt + 1) + "/" + str(max_attempts))
         results = await session_manager.async_requests(links)
-        results = await onlyfans_extras.remove_errors(results)
+        match type(session_manager.auth):
+            case starsavn_classes.create_auth:
+                results = await starsavn_extras.remove_errors(results)
+            case _:
+                results = await onlyfans_extras.remove_errors(results)
         not_faulty = [x for x in results if x]
         faulty = [
             {"key": k, "value": v, "link": links[k]}
@@ -420,3 +425,8 @@ def calculate_the_unpredictable(link, limit, multiplier=1):
         new_link = link.replace(offset, f"offset={new_offset_num}")
         final_links.append(new_link)
     return final_links
+
+def parse_config_inputs(custom_input:Any) -> list[str]:
+    if isinstance(custom_input,str):
+        custom_input = custom_input.split(",")
+    return custom_input

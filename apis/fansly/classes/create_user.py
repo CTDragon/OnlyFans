@@ -21,7 +21,9 @@ from apis.fansly.classes.extras import (
 
 
 class create_user:
-    def __init__(self, option={}, subscriber: create_auth = None) -> None:
+    def __init__(
+        self, option: dict[str, Any] = {}, subscriber: create_auth = None
+    ) -> None:
         self.view: str = option.get("view")
         self.avatar: Any = option.get("avatar")
         self.avatarThumbs: Any = option.get("avatarThumbs")
@@ -48,7 +50,9 @@ class create_user:
         self.subscribePrice: int = option.get("subscribePrice")
         self.hasStripe: bool = option.get("hasStripe")
         self.isStripeExist: bool = option.get("isStripeExist")
-        self.subscriptionBundles: list = option.get("subscriptionBundles")
+        self.subscriptionBundles: list[dict[Any, Any]] = option.get(
+            "subscriptionTiers", []
+        )
         self.canSendChatToAll: bool = option.get("canSendChatToAll")
         self.creditsMin: int = option.get("creditsMin")
         self.creditsMax: int = option.get("creditsMax")
@@ -64,7 +68,7 @@ class create_user:
         self.website: str = option.get("website")
         self.wishlist: str = option.get("wishlist")
         self.location: str = option.get("location")
-        timeline_status = option.get("timelineStats",{})
+        timeline_status = option.get("timelineStats", {})
         self.postsCount: int = option.get("postsCount")
         self.archivedPostsCount: int = option.get("archivedPostsCount")
         self.photosCount: int = timeline_status.get("imageCount")
@@ -85,8 +89,10 @@ class create_user:
         self.canChat: bool = option.get("canChat")
         self.callPrice: int = option.get("callPrice")
         self.isPrivateRestriction: bool = option.get("isPrivateRestriction")
+        self.following: bool = option.get("following")
         self.showSubscribersCount: bool = option.get("showSubscribersCount")
         self.showMediaCount: bool = option.get("showMediaCount")
+        self.subscribed: bool = option.get("subscribed", False)
         self.subscribedByData: Any = option.get("subscription")
         self.subscribedOnData: Any = option.get("subscribedOnData")
         self.canPromotion: bool = option.get("canPromotion")
@@ -221,6 +227,10 @@ class create_user:
             self.session_manager = subscriber.session_manager
         self.download_info = {}
         self.__raw__ = option
+        if self.subscriptionBundles:
+            self.subscribePrice = self.subscriptionBundles[0]["plans"][0]["price"]
+        else:
+            print
 
     def get_link(self):
         link = f"https://onlyfans.com/{self.username}"
@@ -278,7 +288,11 @@ class create_user:
         return results
 
     async def get_posts(
-        self, links: Optional[list] = None, limit:int=10, offset:int=0, refresh=True
+        self,
+        links: Optional[list[str]] = None,
+        limit: int = 10,
+        offset: int = 0,
+        refresh: bool = True,
     ) -> Optional[list[create_post]]:
         api_type = "posts"
         if not refresh:
@@ -287,21 +301,21 @@ class create_user:
                 return result
         if links is None:
             links = []
-        temp_results:list[Any] = []
+        temp_results: list[Any] = []
         while True:
-            link = endpoint_links(
-                identifier=self.id, global_offset=offset
-            ).post_api
+            link = endpoint_links(identifier=self.id, global_offset=offset).post_api
             response = await self.session_manager.json_request(link)
             data = response["response"]
-            temp_posts = data["posts"]
+            temp_posts = data.get("posts")
             if not temp_posts:
                 break
             offset = temp_posts[-1]["id"]
             temp_results.append(data)
-        results:dict[Any,Any] = merge({}, *temp_results, strategy=Strategy.ADDITIVE)
-        final_results = [create_post(x, self,results) for x in results["posts"]]
-        self.temp_scraped.Posts = final_results
+        results: dict[Any, Any] = merge({}, *temp_results, strategy=Strategy.ADDITIVE)
+        final_results = []
+        if results:
+            final_results = [create_post(x, self, results) for x in results["posts"]]
+            self.temp_scraped.Posts = final_results
         return final_results
 
     async def get_post(
@@ -318,14 +332,20 @@ class create_user:
             return final_result
         return response
 
+    async def get_groups(self) -> dict[str, Any]:
+        link = endpoint_links().groups_api
+        response = await self.session_manager.json_request(link)
+        response = response["response"]
+        return response
+
     async def get_messages(
         self,
-        links: Optional[list] = None,
-        limit=10,
-        offset=0,
-        refresh=True,
-        inside_loop=False,
-    ) -> list:
+        links: Optional[list[str]] = None,
+        limit: int = 10,
+        offset: int = 0,
+        refresh: bool = True,
+        inside_loop: bool = False,
+    ) -> list[Any]:
         api_type = "messages"
         if not self.subscriber or self.is_me():
             return []
@@ -333,6 +353,15 @@ class create_user:
             result = handle_refresh(self, api_type)
             if result:
                 return result
+        groups = await self.get_groups()
+        found_id: Optional[int] = None
+        for group in groups["groups"]:
+            for user in group["users"]:
+                if self.id == user["userId"]:
+                    found_id = user["groupId"]
+                    break
+                print
+            print
         if links is None:
             links = []
         multiplier = getattr(self.session_manager.pool, "_processes")
@@ -340,7 +369,7 @@ class create_user:
             link = links[-1]
         else:
             link = endpoint_links(
-                identifier=self.id, global_limit=limit, global_offset=offset
+                identifier=found_id, global_limit=limit, global_offset=offset
             ).message_api
             links.append(link)
         links2 = api_helper.calculate_the_unpredictable(link, limit, multiplier)
@@ -348,14 +377,15 @@ class create_user:
             links += links2
         else:
             links = links2
-        results = await self.session_manager.async_requests(links)
-        results = await remove_errors(results)
-        results = [x for x in results if x]
-        has_more = results[-1]["hasMore"] if results else False
-        final_results = [x["list"] for x in results if "list" in x]
-        final_results = list(chain.from_iterable(final_results))
+        temp_results = await self.session_manager.async_requests(links)
+        temp_results = await remove_errors(temp_results)
+        results: dict[Any, Any] = merge({}, *temp_results, strategy=Strategy.ADDITIVE)
+        if not results:
+            return []
+        extras = results["response"]
+        final_results = extras["messages"]
 
-        if has_more:
+        if final_results:
             results2 = await self.get_messages(
                 links=[links[-1]], limit=limit, offset=limit + offset, inside_loop=True
             )
@@ -363,10 +393,10 @@ class create_user:
         print
         if not inside_loop:
             final_results = [
-                create_message.create_message(x, self) for x in final_results if x
+                create_message.create_message(x, self, extras)
+                for x in final_results
+                if x
             ]
-        else:
-            final_results.sort(key=lambda x: x["fromUser"]["id"], reverse=True)
         self.temp_scraped.Messages = final_results
         return final_results
 
@@ -402,7 +432,7 @@ class create_user:
         return results
 
     async def get_archived_posts(
-        self, links: Optional[list] = None, limit=10, offset=0, refresh=True
+        self, links: Optional[list[str]] = None, limit:int=10, offset:int=0, refresh:bool=True
     ) -> list:
         api_type = "archived_posts"
         if not refresh:

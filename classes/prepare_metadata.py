@@ -1,7 +1,7 @@
 import copy
 import os
 from itertools import chain, groupby
-from typing import MutableMapping, Union
+from typing import Any, MutableMapping, Union
 
 import jsonpickle
 from apis.onlyfans.classes.create_auth import create_auth
@@ -106,10 +106,12 @@ class create_metadata(object):
                 return {}
         return value
 
-    def convert(self, convert_type="json", keep_empty_items=False) -> dict:
+    def convert(
+        self, convert_type: str = "json", keep_empty_items: bool = False
+    ) -> dict[str, Any]:
         if not keep_empty_items:
             self.remove_empty()
-        value = {}
+        value: dict[str, Any] = {}
         if convert_type == "json":
             new_format_copied = copy.deepcopy(self)
             value = jsonpickle.encode(new_format_copied, unpicklable=False)
@@ -149,6 +151,7 @@ class format_content(object):
             def __iter__(self):
                 for attr, value in self.__dict__.items():
                     yield attr, value
+
         old_content = temp_old_content.copy()
         old_content.pop("directories", None)
         new_content = media_types(assign_states=assign_state)
@@ -193,7 +196,7 @@ class format_content(object):
 
     class post_item(create_metadata, object):
         def __init__(self, option={}):
-            create_metadata.__init__(self,option)
+            create_metadata.__init__(self, option)
             self.post_id = option.get("post_id", None)
             self.text = option.get("text", "")
             self.price = option.get("price", 0)
@@ -201,10 +204,12 @@ class format_content(object):
             self.medias = option.get("medias", [])
             self.postedAt = option.get("postedAt", "")
 
-        def convert(self, convert_type="json", keep_empty_items=False) -> dict:
+        def convert(
+            self, convert_type: str = "json", keep_empty_items: bool = False
+        ) -> dict[str, Any]:
             if not keep_empty_items:
                 self.remove_empty()
-            value = {}
+            value:dict[str,Any] = {}
             if convert_type == "json":
                 new_format_copied = copy.deepcopy(self)
                 for media in new_format_copied.medias:
@@ -217,7 +222,7 @@ class format_content(object):
 
     class media_item(create_metadata):
         def __init__(self, option={}):
-            create_metadata.__init__(self,option)
+            create_metadata.__init__(self, option)
             self.media_id = option.get("media_id", None)
             link = option.get("link", [])
             if link:
@@ -373,7 +378,7 @@ class format_types:
 
 
 class prepare_reformat(object):
-    def __init__(self, option, keep_vars=False):
+    def __init__(self, option: dict[str, Any], keep_vars: bool = False):
         format_variables2 = format_variables()
         self.site_name = option.get("site_name", format_variables2.site_name)
         self.post_id = option.get("post_id", format_variables2.post_id)
@@ -381,12 +386,15 @@ class prepare_reformat(object):
         self.profile_username = option.get(
             "profile_username", format_variables2.profile_username
         )
-        self.model_username = option.get("model_username", format_variables2.model_username)
+        self.model_username = option.get(
+            "model_username", format_variables2.model_username
+        )
         self.api_type = option.get("api_type", format_variables2.api_type)
         self.media_type = option.get("media_type", format_variables2.media_type)
         self.filename = option.get("filename", format_variables2.filename)
         self.ext = option.get("ext", format_variables2.ext)
-        self.text = option.get("text", format_variables2.text)
+        text: str = option.get("text", format_variables2.text)
+        self.text = str(text or "")
         self.date = option.get("postedAt", format_variables2.date)
         self.price = option.get("price", 0)
         self.archived = option.get("archived", False)

@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
+import sys
 import asyncio
 import os
-import time
 import traceback
 
-import tests.main_test as main_test
+from rich import panel
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.table import Table
+from rich.text import Text
 
+try:
+    import tests.main_test as main_test
+except SyntaxError:
+    print("Execute the script with Python 3.10\nPress enter to continue")
+    exit()
 try:
 
     main_test.version_check()
@@ -29,6 +40,36 @@ try:
         # logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         async def main():
             while True:
+
+                class live_display:
+                    def __init__(self) -> None:
+                        self.layout = Layout()
+                        self.layout.split_column(
+                            Layout(Text(" "), name="blank", size=1),
+                            Layout(
+                                Panel("", padding=1, title="N/A"), name="header", size=3
+                            ),
+                            Layout(name="upper"),
+                            Layout(Panel(Text(), title="TEXT"), name="lower", size=3),
+                        )
+                        self.layout["upper"].split_row(
+                            Layout(Panel("", title="N/A"), name="left"),
+                            Layout(Panel("", title="N/A"), name="right", ratio=2),
+                        )
+                        self.live = Live(self.layout, refresh_per_second=4)
+                        self.panels = self._panels(self.layout)
+
+                    class _panels:
+                        def __init__(self, layout: Layout) -> None:
+                            self.header = layout["header"]
+                            self.options = layout["upper"]["left"].renderable
+                            self.body = True
+                            self.text = True
+
+                        def update_option_text(self, text: str):
+                            self.options.renderable = text
+
+                # l_d = live_display()
                 if domain:
                     if site_names:
                         site_name = domain
@@ -36,10 +77,14 @@ try:
                         print(string)
                         continue
                 else:
+                    # l_d.panels.update_option_text(string)
                     print(string)
-                    site_choice = str(input())
-                    site_choice = int(site_choice)
-                    site_name = site_names[site_choice]
+                    try:
+                        site_choice = str(input())
+                        site_choice = int(site_choice)
+                        site_name = site_names[site_choice]
+                    except (ValueError, IndexError):
+                        continue
                 site_name_lower = site_name.lower()
                 api = await main_datascraper.start_datascraper(
                     json_config, site_name_lower
@@ -48,17 +93,18 @@ try:
                     api.close_pools()
                 if exit_on_completion:
                     print("Now exiting.")
-                    exit(0)
+                    break
                 elif not infinite_loop:
                     print("Input anything to continue")
                     input()
                 elif loop_timeout:
                     print("Pausing scraper for " + loop_timeout + " seconds.")
-                    time.sleep(int(loop_timeout))
+                    await asyncio.sleep(float(loop_timeout))
 
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(main())
-        loop.close()
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+        asyncio.run(main())
 except Exception as e:
     print(traceback.format_exc())
     input()

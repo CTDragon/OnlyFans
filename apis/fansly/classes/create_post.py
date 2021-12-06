@@ -4,14 +4,14 @@ from typing import Any
 
 
 class create_post:
-    def __init__(self, option, user, extra: dict[Any, Any] = {}) -> None:
+    def __init__(self, option: dict[str,Any], user: create_user, extra: dict[Any, Any] = {}) -> None:
         self.responseType: str = option.get("responseType")
-        self.id: int = option.get("id")
+        self.id: int = int(option["id"])
         self.postedAt: str = option.get("createdAt")
         self.postedAtPrecise: str = option.get("postedAtPrecise")
         self.expiredAt: Any = option.get("expiredAt")
         self.author = create_user.create_user(extra["accounts"][0])
-        self.text: str = option.get("text")
+        self.text: str = option.get("content")
         self.rawText: str = option.get("rawText")
         self.lockedText: bool = option.get("lockedText")
         self.isFavorite: bool = option.get("isFavorite")
@@ -39,28 +39,25 @@ class create_post:
         self.linkedUsers: list = option.get("linkedUsers")
         self.linkedPosts: list = option.get("linkedPosts")
         self.attachments: list = option.get("attachments")
+        # Custom
         final_media: list[Any] = []
         final_media_ids: list[Any] = []
-        if self.attachments:
-            attachment = self.attachments[0]
+        for attachment in self.attachments:
             attachment_content_id = attachment["contentId"]
-            if attachment["contentType"] == 1:
-                final_media_ids.append(attachment_content_id)
-            elif attachment["contentType"] == 2:
-                for bundle in extra["accountMediaBundles"]:
-                    if bundle["id"] == attachment_content_id:
-                        final_media_ids.extend(bundle["accountMediaIds"])
-                        print
+            match attachment["contentType"]:
+                case 1:
+                    final_media_ids.append(attachment_content_id)
+                case 2:
+                    for bundle in extra["accountMediaBundles"]:
+                        if bundle["id"] == attachment_content_id:
+                            final_media_ids.extend(bundle["accountMediaIds"])
+                case _:
                     print
-                print
-            print
         if final_media_ids:
             for final_media_id in final_media_ids:
                 for account_media in extra["accountMedia"]:
                     if account_media["id"] == final_media_id:
                         final_media.append(account_media)
-                    print
-        print
         self.media: list[Any] = final_media
         self.canViewMedia: bool = option.get("canViewMedia")
         self.preview: list = option.get("preview")
@@ -77,29 +74,48 @@ class create_post:
         self.isFavorite = True
         return results
 
-    async def link_picker(self, media: dict[Any, Any], video_quality: str):
-        link = ""
-        locations = media["locations"]
-        if locations:
-            link: str = locations[0]["location"]
-        # if "source" in media:
-        #     quality_key = "source"
-        #     source = media[quality_key]
-        #     link = source[quality_key]
-        #     if link:
-        #         if media["type"] == "video":
-        #             qualities = media["videoSources"]
-        #             qualities = dict(sorted(qualities.items(), reverse=False))
-        #             qualities[quality_key] = source[quality_key]
-        #             for quality, quality_link in qualities.items():
-        #                 video_quality = video_quality.removesuffix("p")
-        #                 if quality == video_quality:
-        #                     if quality_link:
-        #                         link = quality_link
-        #                         break
-        #                     print
-        #                 print
-        #             print
-        # if "src" in media:
-        #     link = media["src"]
-        return link
+    async def link_picker(self, media: dict[Any, Any], target_quality: str):
+        # There are two media results at play here.
+        # The top-level `media` element itself represents the original source quality.
+        # It may also contain a `variants` list entry with alternate encoding qualities.
+        # Each variant has a similar structure to the main media element.
+        media_url = ""
+        source_media = media
+        variants = media.get("variants", [])
+
+        if target_quality == "source":
+            try:
+                return source_media["locations"][0]["location"]
+            except (KeyError, IndexError):
+                pass
+
+        # Track the target type as videos may also include thumbnail image variants.
+        target_type = source_media.get("mimetype")
+
+        qualities: list[tuple[int, str]] = []
+        for variant in variants + [source_media]:
+            if variant.get("mimetype") != target_type:
+                continue
+
+            media_quality = variant["height"]
+            try:
+                media_url = variant["locations"][0]["location"]
+            except (KeyError, IndexError):
+                continue
+            qualities.append( (media_quality, media_url) )
+
+        if not qualities:
+            return
+
+        # Iterate the media from highest to lowest quality.
+        for media_quality, media_url in sorted(qualities, reverse=True):
+            # If there was no "source" quality media, return the highest quality/first media.
+            if target_quality == "source":
+                return media_url
+
+            # Return the first media <= the target quality.
+            if media_quality <= int(target_quality):
+                return media_url
+
+        # If all media was > target quality, return the lowest quality/last media.
+        return media_url

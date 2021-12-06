@@ -1,20 +1,18 @@
-import apis.onlyfans.classes.create_user as create_user
-from apis.onlyfans.classes.extras import endpoint_links
+import apis.starsavn.classes.create_user as create_user
+from apis.starsavn.classes.extras import endpoint_links
 from typing import Any
 
 
 class create_post:
-    def __init__(self, option: dict[str, Any], user) -> None:
+    def __init__(self, option, user) -> None:
         self.responseType: str = option.get("responseType")
         self.id: int = option.get("id")
         self.postedAt: str = option.get("postedAt")
         self.postedAtPrecise: str = option.get("postedAtPrecise")
         self.expiredAt: Any = option.get("expiredAt")
         self.author = create_user.create_user(option.get("author", {}))
-        text: str = option.get("text", "")
-        self.text = str(text or "")
-        raw_text: str = option.get("rawText", "")
-        self.rawText = str(raw_text or "")
+        self.text: str = option.get("text")
+        self.rawText: str = option.get("rawText")
         self.lockedText: bool = option.get("lockedText")
         self.isFavorite: bool = option.get("isFavorite")
         self.isReportedByMe: bool = option.get("isReportedByMe")
@@ -40,9 +38,9 @@ class create_post:
         self.mentionedUsers: list = option.get("mentionedUsers")
         self.linkedUsers: list = option.get("linkedUsers")
         self.linkedPosts: list = option.get("linkedPosts")
-        self.media: list = option.get("media", [])
+        self.media: list[dict[str, Any]] = option.get("media", [])
         self.canViewMedia: bool = option.get("canViewMedia")
-        self.preview: list = option.get("preview")
+        self.preview: list = option.get("preview", [])
         self.canPurchase: bool = option.get("canPurchase")
         self.user: create_user.create_user = user
 
@@ -77,5 +75,5 @@ class create_post:
                         print
                     print
         if "src" in media:
-            link = media["src"]
+            link = media["src"]["source"]
         return link

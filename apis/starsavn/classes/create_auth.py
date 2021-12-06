@@ -1,17 +1,16 @@
 import asyncio
-from asyncio.tasks import Task
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import chain, product
 from multiprocessing.pool import Pool
-from typing import Any, Coroutine, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import jsonpickle
 from apis import api_helper
-from apis.onlyfans.classes.create_message import create_message
-from apis.onlyfans.classes.create_post import create_post
-from apis.onlyfans.classes.create_user import create_user
-from apis.onlyfans.classes.extras import (
+from apis.starsavn.classes.create_message import create_message
+from apis.starsavn.classes.create_post import create_post
+from apis.starsavn.classes.create_user import create_user
+from apis.starsavn.classes.extras import (
     auth_details,
     content_types,
     create_headers,
@@ -53,6 +52,7 @@ class create_auth(create_user):
     def update(self, data: Dict[str, Any]):
         if not data["username"]:
             data["username"] = f"u{data['id']}"
+        self.subscribesCount = data["followingCount"]
         for key, value in data.items():
             found_attr = hasattr(self, key)
             if found_attr:
@@ -71,7 +71,7 @@ class create_auth(create_user):
         auth_id = str(auth_items.cookie.auth_id)
         # expected string error is fixed by auth_id
         dynamic_rules = self.session_manager.dynamic_rules
-        a: list[Any] = [dynamic_rules, auth_id, auth_items.x_bc, user_agent, link]
+        a: List[Any] = [dynamic_rules, auth_id, user_agent, link]
         self.session_manager.headers = create_headers(*a)
         if guest:
             print("Guest Authentication")
@@ -118,7 +118,7 @@ class create_auth(create_user):
                     error = self.errors[-1]
                     error_message = error.message
                     if "token" in error_message:
-                        break
+                        breakonlyfans
                     if "Code wrong" in error_message:
                         break
                     if "Please refresh" in error_message:
@@ -174,17 +174,14 @@ class create_auth(create_user):
         error.message = error_message
         self.errors.append(error)
 
-    async def get_lists(self, refresh=True, limit=100, offset=0):
+    async def get_lists(self, refresh=True, limit=100, offset=0) -> list[Any]:
         api_type = "lists"
         if not self.active:
             return
         if not refresh:
             subscriptions = handle_refresh(self, api_type)
             return subscriptions
-        link = endpoint_links(global_limit=limit, global_offset=offset).lists
-        results = await self.session_manager.json_request(link)
-        self.lists = results
-        return results
+        return []
 
     async def get_user(
         self, identifier: Union[str, int]
@@ -192,8 +189,6 @@ class create_auth(create_user):
         link = endpoint_links(identifier).users
         response = await self.session_manager.json_request(link)
         if not isinstance(response, error_details):
-            if not response:
-                print
             response["session_manager"] = self.session_manager
             response = create_user(response, self)
         return response
@@ -227,21 +222,21 @@ class create_auth(create_user):
 
     async def get_subscriptions(
         self,
-        refresh: bool = True,
-        identifiers: list[int | str] = [],
-        extra_info: bool = True,
-        limit: int = 20,
+        resume=None,
+        refresh=True,
+        identifiers: list = [],
+        extra_info=True,
+        limit=20,
+        offset=0,
     ) -> list[create_user]:
         if not self.active:
             return []
         if not refresh:
             subscriptions = self.subscriptions
             return subscriptions
-        # if self.subscribesCount > 900:
-        #     limit = 100
         ceil = math.ceil(self.subscribesCount / limit)
         a = list(range(ceil))
-        offset_array: list[str] = []
+        offset_array = []
         for b in a:
             b = b * limit
             link = endpoint_links(global_limit=limit, global_offset=b).subscriptions
@@ -274,35 +269,41 @@ class create_auth(create_user):
             results.append(subscription)
         if not identifiers:
 
-            async def multi(item: str):
+            async def multi(item):
                 link = item
                 subscriptions = await self.session_manager.json_request(link)
-                valid_subscriptions: list[create_user] = []
+                valid_subscriptions = []
                 extras = {}
                 extras["auth_check"] = ""
                 if isinstance(subscriptions, error_details):
                     return
                 subscriptions = [
                     subscription
-                    for subscription in subscriptions
+                    for subscription in subscriptions["list"]
                     if "error" != subscription
                 ]
-                tasks: list[Task[create_user | error_details]] = []
+                tasks = []
                 for subscription in subscriptions:
                     subscription["session_manager"] = self.session_manager
                     if extra_info:
-                        task = asyncio.create_task(
-                            self.get_user(subscription["username"])
-                        )
+                        task = self.get_user(subscription["username"])
                         tasks.append(task)
-                results2 = await asyncio.gather(*tasks)
-                for result in results2:
-                    if isinstance(result, error_details):
+                tasks = await asyncio.gather(*tasks)
+                for task in tasks:
+                    if isinstance(task, error_details):
                         continue
-                    subscription2: create_user = result
+                    subscription2: create_user = task
                     for subscription in subscriptions:
                         if subscription["id"] != subscription2.id:
                             continue
+                        subscribedByData = {}
+                        new_date = datetime.utcnow().replace(tzinfo=timezone.utc) + relativedelta(years=1)
+                        temp = subscription.get("subscribedByExpireDate", new_date)
+                        if isinstance(temp, str):
+                            new_date = datetime.fromisoformat(temp)
+                        subscribedByData["expiredAt"] = new_date
+                        subscription2.subscribedByData = subscribedByData
+                        subscription["mediaCount"] = subscription2.mediasCount
                         subscription = subscription | subscription2.__dict__
                         subscription = create_user(subscription, self)
                         if subscription.isBlocked:
@@ -328,6 +329,13 @@ class create_auth(create_user):
                     continue
                 subscription.session_manager = self.session_manager
                 subscription.subscriber = self
+                subscribedByData = {}
+                new_date = datetime.utcnow().replace(tzinfo=timezone.utc) + relativedelta(years=1)
+                temp = result.get("subscribedByExpireDate", new_date)
+                if isinstance(temp, str):
+                    new_date = datetime.fromisoformat(temp)
+                subscribedByData["expiredAt"] = new_date
+                subscription.subscribedByData = subscribedByData
                 results.append([subscription])
                 print
             print
@@ -434,7 +442,7 @@ class create_auth(create_user):
         self,
         check: bool = False,
         refresh: bool = True,
-        limit: int = 10,
+        limit: int = 99,
         offset: int = 0,
         inside_loop: bool = False,
     ) -> list[Union[create_message, create_post]]:
@@ -447,15 +455,16 @@ class create_auth(create_user):
                 return result
         link = endpoint_links(global_limit=limit, global_offset=offset).paid_api
         final_results = await self.session_manager.json_request(link)
-        if not isinstance(final_results, error_details):
+        if not isinstance(final_results,error_details):
             if len(final_results) >= limit and not check:
-                results2 = await self.get_paid_content(
+                results2 = self.get_paid_content(
                     limit=limit, offset=limit + offset, inside_loop=True
                 )
                 final_results.extend(results2)
             if not inside_loop:
                 temp = []
                 for final_result in final_results:
+                    continue
                     content = None
                     if final_result["responseType"] == "message":
                         user = create_user(final_result["fromUser"], self)

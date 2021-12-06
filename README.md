@@ -36,7 +36,7 @@ From the project folder open CMD/Terminal and run the command below:
 
 Start:
 
-`python start_ofd.py` | `python3 start_ofd.py` | double click `start_ofd.py`
+`python start_ofd.py` | `python3 start_ofd.py` | `python3.10 start_ofd.py` | double click `start_ofd.py`
 
 ---
 
@@ -48,8 +48,9 @@ Open and edit:
 
 You have to fill in the following:
 
-- `{"cookie":"your_cookie"}`
-- `{"user-agent":"your_user-agent"}`
+- `{"cookie":"cookie_value"}`
+- `{"x-bc":"x-bc_value"}`
+- `{"user-agent":"user-agent_value"}`
 
 Go to www.onlyfans.com and login, open the network debugger, then check the image below on how to get said above cookies
 
@@ -199,6 +200,15 @@ Usage: Select the resolution of the video.
     720p = "720" | "720p"
     240p = "240" | "240p"
 
+### auto_profile_choice:
+Types: str|int
+
+Usage: You can automatically choose which profile you want to scrape.
+
+    Default = ""
+
+    If you've got a profile folder named "user_one", set auto_profile_choice to "user_one" and it will choose it automatically.
+
 ### auto_site_choice:
 Types: str|int
 
@@ -342,16 +352,16 @@ Types: list|int|str|bool
 ### blacklist_name:
 
     Default = ""
+    Example = ["Blacklisted"]
+    Example = "Blacklisted,alsoforbidden"
 
-    This setting will not include any blacklisted usernames when you choose the "scrape all" option.
+    This setting allows you to remove usernames when you choose the "scrap all" option by using lists or targetting specific usernames.
 
-    Go to https://onlyfans.com/my/lists and create a new list; you can name it whatever you want but I called mine "Blacklisted".
-
+    1. Go to https://onlyfans.com/my/lists and create a new list; you can name it whatever you want but I called mine "Blacklisted".
     Add the list's name to the config.
-
     Example: "blacklist_name": "Blacklisted"
 
-    You can create as many lists as you want.
+    2. Or simply put the username of the content creator in the list.
 
 # FAQ
 
